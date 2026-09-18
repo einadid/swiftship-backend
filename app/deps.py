@@ -2,11 +2,14 @@
 import jwt as pyjwt
 
 from fastapi import Depends, Header, HTTPException, status
+from fastapi.security import HTTPAuthorizationCredentials, HTTPBearer
 from sqlalchemy.orm import Session
 
 from . import security
 from .database import get_db
 from .models import User
+
+bearer_scheme = HTTPBearer(auto_error=False)
 
 
 def _credentials_exception(detail: str) -> HTTPException:
@@ -19,16 +22,19 @@ def _credentials_exception(detail: str) -> HTTPException:
 
 def get_current_user(
     db: Session = Depends(get_db),
+    cred: HTTPAuthorizationCredentials | None = Depends(bearer_scheme),
     authorization: str | None = Header(default=None),
 ) -> User:
-    """Resolve the authenticated user from the `Authorization: Bearer <token>` header.
+    """Resolve the authenticated user from the Bearer token."""
+    token = None
+    if cred and cred.credentials:
+        token = cred.credentials
+    elif authorization and authorization.lower().startswith("bearer "):
+        token = authorization.split(" ", 1)[1].strip()
 
-    Validates the JWT, checks expiry, and confirms the account still exists
-    and is active.
-    """
-    if not authorization or not authorization.lower().startswith("bearer "):
+    if not token:
         raise _credentials_exception("Not authenticated")
-    token = authorization.split(" ", 1)[1].strip()
+
     try:
         payload = security.decode_token(token, purpose="access")
     except pyjwt.ExpiredSignatureError:
@@ -36,7 +42,15 @@ def get_current_user(
     except pyjwt.PyJWTError:
         raise _credentials_exception("Invalid token")
 
-    user = db.get(User, int(payload.get("sub", 0)))
+    token_type = payload.get("type") or payload.get("purpose")
+    if token_type != "access":
+        raise _credentials_exception("Wrong token type")
+
+    user_id = payload.get("sub")
+    if not user_id:
+        raise _credentials_exception("Invalid token")
+
+    user = db.get(User, int(user_id))
     if user is None:
         raise _credentials_exception("User no longer exists")
     if not user.is_active:
@@ -47,5 +61,5 @@ def get_current_user(
 def get_current_admin(user: User = Depends(get_current_user)) -> User:
     """Route protection: only allow users with the admin role."""
     if user.role != "admin":
-        raise HTTPException(status_code=status.HTTP_403_FORBIDDEN, detail="Admins only")
+        raise HTTPException(status_code=status.HTTP_403_FORBIDDEN, detail="Admin privileges required")
     return user

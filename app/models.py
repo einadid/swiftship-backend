@@ -11,6 +11,7 @@ from sqlalchemy import (
     String,
     Text,
 )
+from sqlalchemy.ext.hybrid import hybrid_property
 from sqlalchemy.orm import relationship
 
 from .database import Base
@@ -24,13 +25,23 @@ class User(Base):
     __tablename__ = "users"
 
     id = Column(Integer, primary_key=True, index=True)
-    full_name = Column(String(100), nullable=False)
-    email = Column(String(120), unique=True, index=True, nullable=False)
+    full_name = Column(String(120), nullable=False)
+    email = Column(String(160), unique=True, index=True, nullable=False)
     phone = Column(String(20), nullable=False)
     hashed_password = Column(String(255), nullable=False)
     role = Column(String(10), nullable=False, default="user")  # "user" | "admin"
     is_active = Column(Boolean, nullable=False, default=True)
+    reset_token = Column(String(120), nullable=True)
+    reset_token_expiry = Column(DateTime, nullable=True)
     created_at = Column(DateTime, nullable=False, default=utcnow)
+
+    @hybrid_property
+    def password_hash(self):
+        return self.hashed_password
+
+    @password_hash.setter
+    def password_hash(self, val):
+        self.hashed_password = val
 
     parcels = relationship("Parcel", back_populates="owner", cascade="all, delete-orphan")
 

@@ -29,10 +29,24 @@ app = FastAPI(
     ),
 )
 
-# CORS — set CORS_ORIGINS to your deployed frontend origin(s), comma separated
+# CORS configuration: allow frontend dev/production origins
+cors_env = os.getenv("CORS_ORIGINS", "")
+allowed_origins = [
+    "http://localhost:5173",
+    "http://127.0.0.1:5173",
+    "http://localhost:3000",
+    "http://127.0.0.1:3000",
+]
+if cors_env:
+    for o in cors_env.split(","):
+        o_clean = o.strip()
+        if o_clean and o_clean not in allowed_origins:
+            allowed_origins.append(o_clean)
+
 app.add_middleware(
     CORSMiddleware,
-    allow_origins=[o.strip() for o in os.getenv("CORS_ORIGINS", "*").split(",") if o.strip()],
+    allow_origins=allowed_origins if cors_env != "*" else ["*"],
+    allow_origin_regex=r"^https?://.*$" if cors_env == "*" or not cors_env else None,
     allow_credentials=True,
     allow_methods=["*"],
     allow_headers=["*"],
@@ -43,11 +57,13 @@ app.include_router(parcels.router, prefix="/api/parcels", tags=["Parcels"])
 app.include_router(services.router, prefix="/api/services", tags=["Services"])
 app.include_router(users.router, prefix="/api/users", tags=["Users (admin)"])
 
+
 @app.get("/", include_in_schema=False)
 def root():
     """Base URL opens the interactive API docs."""
     return RedirectResponse(url="/docs")
 
+
 @app.get("/api/health", tags=["Health"], summary="Health check")
 def health():
-    return {"status": "ok", "service": "SwiftShip Courier API", "version": app.version}
+    return {"status": "ok", "service": "SwiftShip Courier API", "version": "1.0.0"}
