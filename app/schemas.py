@@ -1,10 +1,20 @@
 """Pydantic schemas (request/response validation)."""
 import re
 from datetime import datetime
+from typing import Literal
 
 from pydantic import BaseModel, ConfigDict, EmailStr, Field, field_validator
 
 from .models import PARCEL_STATUSES
+
+ParcelStatusType = Literal[
+    "pending",
+    "picked_up",
+    "in_transit",
+    "out_for_delivery",
+    "delivered",
+    "cancelled",
+]
 
 
 def validate_password_strength(v: str) -> str:
@@ -26,7 +36,7 @@ def validate_phone(v: str) -> str:
 
 # ---------- Auth ----------
 class SignupRequest(BaseModel):
-    full_name: str = Field(min_length=2, max_length=100)
+    full_name: str = Field(min_length=2, max_length=120)
     email: EmailStr
     phone: str
     password: str
@@ -79,6 +89,7 @@ class TokenPair(BaseModel):
     access_token: str
     refresh_token: str
     token_type: str = "bearer"
+    expires_in: int = 1800
 
 
 class UserOut(BaseModel):
@@ -123,7 +134,7 @@ class ServiceUpdate(BaseModel):
 class ServiceOut(ServiceBase):
     model_config = ConfigDict(from_attributes=True)
     id: int
-    created_at: datetime
+    created_at: datetime | None = None
 
 
 # ---------- Parcels ----------
@@ -158,30 +169,16 @@ class ParcelUpdate(BaseModel):
     weight_kg: float | None = Field(default=None, gt=0, le=500)
     notes: str | None = Field(default=None, max_length=1000)
     service_id: int | None = None
-    status: str | None = None  # admin only
+    status: ParcelStatusType | None = None  # admin only
 
     @field_validator("sender_phone", "recipient_phone")
     @classmethod
     def _ph(cls, v):
         return validate_phone(v) if v is not None else v
 
-    @field_validator("status")
-    @classmethod
-    def _st(cls, v):
-        if v is not None and v not in PARCEL_STATUSES:
-            raise ValueError(f"Invalid status. Allowed: {', '.join(PARCEL_STATUSES)}")
-        return v
-
 
 class StatusUpdate(BaseModel):
-    status: str
-
-    @field_validator("status")
-    @classmethod
-    def _st(cls, v):
-        if v not in PARCEL_STATUSES:
-            raise ValueError(f"Invalid status. Allowed: {', '.join(PARCEL_STATUSES)}")
-        return v
+    status: ParcelStatusType
 
 
 class ParcelOut(ParcelBase):
@@ -207,18 +204,19 @@ class ParcelList(BaseModel):
 
 class ParcelSummary(BaseModel):
     total: int
-    by_status: dict[str, int]
-    total_spent: float
-    delivered: int
     active: int  # anything not delivered/cancelled
+    delivered: int
+    cancelled: int = 0
+    total_spent: float
+    by_status: dict[str, int] | None = None
 
 
 class AdminStats(BaseModel):
     total_parcels: int
+    active_parcels: int
     total_revenue: float
     total_users: int
     total_services: int
-    active_parcels: int
     by_status: dict[str, int]
     recent_parcels: list[ParcelOut]
 
@@ -226,7 +224,7 @@ class AdminStats(BaseModel):
 class TrackOut(BaseModel):
     tracking_number: str
     status: str
-    status_label: str
+    status_label: str | None = None
     sender_name: str
     recipient_name: str
     pickup_address: str
