@@ -9,6 +9,7 @@ import os
 
 from fastapi import FastAPI
 from fastapi.middleware.cors import CORSMiddleware
+from fastapi.responses import RedirectResponse
 
 from .database import Base, engine
 from .routers import auth, parcels, services, users
@@ -42,6 +43,10 @@ app.include_router(parcels.router, prefix="/api/parcels", tags=["Parcels"])
 app.include_router(services.router, prefix="/api/services", tags=["Services"])
 app.include_router(users.router, prefix="/api/users", tags=["Users (admin)"])
 
+@app.get("/", include_in_schema=False)
+def root():
+    """Base URL opens the interactive API docs."""
+    return RedirectResponse(url="/docs")
 
 @app.get("/api/health", tags=["Health"], summary="Health check")
 def health():
